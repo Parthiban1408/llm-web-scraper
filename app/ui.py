@@ -20,7 +20,7 @@ st.markdown("""
         border: 2px solid #4CAF50;
     }
     </style>
-    """, unsafe_access=True)
+    """, unsafe_allow_html=True)
 
 # --- SIDEBAR FOR FILE UPLOAD ---
 with st.sidebar:
