@@ -1,93 +1,106 @@
 import streamlit as st
+import pandas as pd
+import PyPDF2
 from groq import Groq
 from tavily import TavilyClient
-import os
+import io
 
-# --- 1. CONFIGURATION & INITIALIZATION ---
-st.set_page_config(page_title="Roon AI - Real-time Assistant", layout="centered")
+# --- 1. CONFIGURATION ---
+st.set_page_config(page_title="Roon AI - Data Scientist Mode", layout="wide")
 
-# Initialize Clients (using Streamlit secrets)
-# Make sure these are in your .streamlit/secrets.toml
 try:
     groq_client = Groq(api_key=st.secrets["GROQ_API_KEY"])
     tavily_client = TavilyClient(api_key=st.secrets["TAVILY_API_KEY"])
 except Exception as e:
-    st.error("API Keys missing! Add GROQ_API_KEY and TAVILY_API_KEY to secrets.toml")
+    st.error("Missing API Keys in secrets.toml")
     st.stop()
 
-# --- 2. SEARCH ENGINE LOGIC ---
+# --- 2. FILE PROCESSING FUNCTIONS ---
+def process_file(uploaded_file):
+    """Extracts text or data from Excel/PDF."""
+    try:
+        if uploaded_file.name.endswith('.xlsx') or uploaded_file.name.endswith('.xls'):
+            df = pd.read_excel(uploaded_file)
+            return f"Excel Data Summary:\n{df.head(20).to_string()}" # Send first 20 rows
+        elif uploaded_file.name.endswith('.pdf'):
+            pdf_reader = PyPDF2.PdfReader(uploaded_file)
+            text = ""
+            for page in pdf_reader.pages[:5]: # Limit to first 5 pages for context window
+                text += page.extract_text()
+            return f"PDF Content:\n{text}"
+        elif uploaded_file.name.endswith('.csv'):
+            df = pd.read_csv(uploaded_file)
+            return f"CSV Data Summary:\n{df.head(20).to_string()}"
+    except Exception as e:
+        return f"Error reading file: {e}"
+    return ""
+
+# --- 3. WEB SEARCH ---
 def search_web(query):
-    """Fetches real-time data using Tavily."""
     response = tavily_client.search(query=query, search_depth="basic", max_results=3)
     return response['results']
 
-# --- 3. AI BRAIN (The Decision Maker) ---
-def get_ai_response(user_query, history):
-    # Aggressive instructions to stop the "Knowledge Cutoff" loop
-    system_prompt = """You are Roon, an elite real-time AI.
-    CRITICAL: You have access to the internet via the WEB RESULTS provided. 
-    NEVER mention a 'knowledge cutoff'. NEVER say you don't have real-time data.
-    If the WEB RESULTS contain data, use it to answer the user accurately. 
-    If they are empty, provide the best answer possible without apologizing for your training date."""
+# --- 4. SIDEBAR (Data Scientist Mode) ---
+with st.sidebar:
+    st.title("📂 Data Scientist Mode")
+    uploaded_file = st.file_uploader("Upload Excel, PDF, or CSV", type=["xlsx", "xls", "pdf", "csv"])
+    
+    file_context = ""
+    if uploaded_file:
+        with st.spinner("Processing file..."):
+            file_context = process_file(uploaded_file)
+            st.success(f"Loaded: {uploaded_file.name}")
+            if "Excel Data" in file_context or "CSV" in file_context:
+                st.info("AI can now see the top rows of your data.")
 
-    # Keywords that trigger a live search
-    search_keywords = ["price", "today", "news", "latest", "weather", "current", "2025", "2026"]
+# --- 5. AI LOGIC ---
+def get_ai_response(user_query, history, file_context):
+    system_prompt = f"""You are Roon, a high-level Data Scientist and Research AI.
+    
+    FILE DATA: {file_context if file_context else "No file uploaded."}
+    
+    INSTRUCTIONS:
+    1. If the user asks about the uploaded file, prioritize the FILE DATA.
+    2. If the user asks for current prices or news, use the WEB RESULTS.
+    3. NEVER mention a 'knowledge cutoff'. Be the expert."""
+
+    search_keywords = ["price", "today", "latest", "news", "current", "weather"]
     needs_search = any(word in user_query.lower() for word in search_keywords)
     
     web_context = ""
-    
     if needs_search:
-        # Show a status spinner while searching
-        with st.status("🌐 Searching the live web...", expanded=False) as status:
-            try:
-                results = search_web(user_query)
-                if results:
-                    # Clean and format the search results for the AI
-                    cleaned_data = [f"Source: {r['url']}\nContent: {r['content']}" for r in results]
-                    web_context = "\n\n--- WEB RESULTS ---\n" + "\n\n".join(cleaned_data)
-                    status.update(label="✅ Search complete!", state="complete")
-                else:
-                    status.update(label="⚠️ No live results found.", state="error")
-            except Exception as e:
-                st.error(f"Search failed: {e}")
-                status.update(label="❌ Search Error", state="error")
+        with st.status("🌐 Fetching live market data...", expanded=False) as status:
+            results = search_web(user_query)
+            if results:
+                cleaned = [f"Source: {r['url']}\nContent: {r['content']}" for r in results]
+                web_context = "\n\nWEB RESULTS:\n" + "\n\n".join(cleaned)
+                status.update(label="✅ Live data retrieved!", state="complete")
 
-    # Combine instructions, search data, and user query
     full_prompt = f"{system_prompt}\n\n{web_context}\n\nUser Question: {user_query}\nAnswer:"
     
-    try:
-        # Using 8b model as it is often more 'obedient' to specific system instructions
-        response = groq_client.chat.completions.create(
-            model="llama-3.1-8b-instant", 
-            messages=[{"role": "user", "content": full_prompt}],
-            temperature=0.0  # Low temperature for factual accuracy
-        )
-        return response.choices[0].message.content
-    except Exception as e:
-        return f"AI Error: {str(e)}"
+    response = groq_client.chat.completions.create(
+        model="llama-3.3-70b-versatile", 
+        messages=[{"role": "user", "content": full_prompt}],
+        temperature=0.1
+    )
+    return response.choices[0].message.content
 
-# --- 4. STREAMLIT UI LAYOUT ---
+# --- 6. CHAT UI ---
 st.title("🤖 Roon AI")
-st.caption("Real-time Data Assistant powered by Groq & Tavily")
 
-# Initialize chat history in session state
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Display previous messages
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# Chat Input Logic
-if prompt := st.chat_input("Ask me anything about today..."):
-    # Display user message
+if prompt := st.chat_input("Analyze this file or ask about today's prices..."):
     with st.chat_message("user"):
         st.markdown(prompt)
     st.session_state.messages.append({"role": "user", "content": prompt})
 
-    # Generate and display AI response
     with st.chat_message("assistant"):
-        response_text = get_ai_response(prompt, st.session_state.messages)
-        st.markdown(response_text)
-    st.session_state.messages.append({"role": "assistant", "content": response_text})
+        response = get_ai_response(prompt, st.session_state.messages, file_context)
+        st.markdown(response)
+    st.session_state.messages.append({"role": "assistant", "content": response})
