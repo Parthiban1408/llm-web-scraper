@@ -80,7 +80,7 @@ def get_ai_response(user_query, history, file_data):
     # 1. Expanded keywords to capture years and timeframes
     search_keywords = [
         "news", "price", "today", "yesterday", "current", "latest", "weather",
-        "2024", "2025", "2026", "score", "match", "live", "stock", "ipl"
+        "2024", "2025", "2026", "technology", "research", "live", "stock", "sports"
     ]
     
     # 2. Decide if we need web search based on the query
