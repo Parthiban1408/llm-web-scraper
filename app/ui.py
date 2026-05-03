@@ -68,20 +68,16 @@ if user_input := st.chat_input("Ask me anything..."):
         with st.spinner("Thinking..."):
             response = get_ai_response(user_input, st.session_state.messages, file_context)
             st.markdown(response)
-            # --- The "Decision" Brain ---
+          
+
 # --- The "Decision" Brain ---
 def get_ai_response(user_query, history, file_data):
-    # 1. AGGRESSIVE SYSTEM PROMPT
-    # We must explicitly forbid the AI from saying its default cutoff phrase
-    system_prompt = """You are Roon, an elite AI.
-    
-    CRITICAL RULES:
-    1. You HAVE real-time internet access via the "WEB RESULTS" block provided below.
-    2. NEVER say "As of my knowledge cutoff". 
-    3. NEVER say "I don't have real-time data".
-    4. Base your answer entirely on the WEB RESULTS. Speak confidently as if you searched it yourself."""
+    # Absolutely zero tolerance for AI disclaimers
+    system_prompt = """You are a direct data-parser. You do not have opinions. 
+    You must read the WEB RESULTS block and output the answer directly.
+    NEVER mention a knowledge cutoff. NEVER mention that you are an AI.
+    If the WEB RESULTS are empty, reply exactly with: "Search failed. No live data available." """
 
-    # 2. Trigger words (added 'petrol' just in case)
     search_keywords = [
         "news", "price", "today", "yesterday", "current", "latest", "weather",
         "2024", "2025", "2026", "live", "stock", "petrol"
@@ -102,21 +98,21 @@ def get_ai_response(user_query, history, file_data):
             
             if cleaned_results:
                 web_context = "\n\n--- WEB RESULTS ---\n" + "\n".join(cleaned_results)
-                # DEBUG: Print to your terminal so you can verify Tavily is working
-                print(f"SEARCH SUCCESS! Data found: {cleaned_results[0][:100]}...") 
+                # THIS WILL SHOW UP ON YOUR SCREEN:
+                st.info(f"🔍 Search Success! Passing this to AI:\n {web_context[:200]}...") 
             else:
-                web_context = "\n\n--- WEB RESULTS ---\nNo data found from search."
-                print("SEARCH FAILED: Tavily returned empty results.")
+                web_context = "\n\n--- WEB RESULTS ---\nEMPTY"
+                # THIS WILL SHOW UP ON YOUR SCREEN:
+                st.warning("⚠️ Search returned empty! Check your Tavily API key.")
         except Exception as e:
-            web_context = f"\n\n--- WEB RESULTS ---\nSearch Error: {str(e)}"
-            print(f"SEARCH CRASHED: {str(e)}")
+            web_context = "\n\n--- WEB RESULTS ---\nEMPTY"
+            st.error(f"❌ Search Error: {str(e)}")
     
-    # 3. Final Assembly
     full_prompt = f"{system_prompt}\n\nFile Context: {file_data}{web_context}\n\nUser Question: {user_query}\nAnswer:"
     
     res = groq_client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=[{"role": "user", "content": full_prompt}],
-        temperature=0.1 # Very low temperature to force strict obedience to the prompt
+        temperature=0.0 # 0.0 forces strict logic, zero creativity
     )
     return res.choices[0].message.content
