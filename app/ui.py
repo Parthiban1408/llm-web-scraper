@@ -70,40 +70,39 @@ if user_input := st.chat_input("Ask me anything..."):
             st.markdown(response)
             # --- The "Decision" Brain ---
 def get_ai_response(user_query, history, file_data):
-    # System prompt to set the "Gemini-like" personality
-    system_prompt = """You are Roon, an elite AI with emotional, mathematical, and coding intelligence.
-    - If data is provided, act as a Data Analyst. Perform statistical summaries and reasoning.
-    - For coding/math, answer directly using your internal logic.
-    - For live news or real-time data, use the provided Web Search Results.
-    - Be concise but deeply insightful."""
+    system_prompt = """You are Roon, an elite AI. 
+    Use the provided Web Search Results to answer real-time questions. 
+    If the search results are present, use them as your primary source of truth."""
 
-    # 1. Expanded keywords to capture years and timeframes
-    search_keywords = [
-        "news", "price", "today", "yesterday", "current", "latest", "weather",
-        "2024", "2025", "2026", "technology", "research", "live", "stock", "sports"
-    ]
-    
-    # 2. Decide if we need web search based on the query
+    search_keywords = ["news", "price", "today", "yesterday", "current", "latest", "weather", "2024", "2025", "2026", "live", "stock"]
     needs_search = any(word in user_query.lower() for word in search_keywords)
     
     web_context = ""
     if needs_search:
         try:
-            # Fetch real-time data
-            results = search_web(user_query)
-            web_context = f"\n\nWeb Search Results (Real-time data): {results}"
-        except:
-            web_context = "\n\n(Note: Web search is currently unavailable, answering from internal knowledge.)"
+            raw_results = search_web(user_query)
+            
+            # --- CRITICAL FIX: CLEAN THE DATA ---
+            # This turns [{'content': 'price is 100'}] into "Source: price is 100"
+            cleaned_results = []
+            for res in raw_results:
+                if isinstance(res, dict):
+                    content = res.get('content', '') or res.get('snippet', '')
+                    cleaned_results.append(f"- {content}")
+            
+            if cleaned_results:
+                web_context = "\n\nWEB SEARCH RESULTS:\n" + "\n".join(cleaned_results)
+            else:
+                web_context = "\n\n(Search returned no specific data points.)"
+        except Exception as e:
+            web_context = f"\n\n(Search Error: {str(e)})"
     
-    # 3. Combine everything into the prompt
-    # We add web_context here so the model can see the search results
-    full_prompt = f"{system_prompt}\n\nFile Context: {file_data}{web_context}\n\nUser: {user_query}\nAI:"
+    # Combine everything
+    full_prompt = f"{system_prompt}\n\nFile Context: {file_data}{web_context}\n\nUser Question: {user_query}\nAI Answer:"
     
     res = groq_client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=[{"role": "user", "content": full_prompt}],
-        temperature=0.3
+        temperature=0.2 # Lower temperature makes it stick to the facts
     )
     return res.choices[0].message.content
-    
-    st.session_state.messages.append({"role": "assistant", "content": response})
