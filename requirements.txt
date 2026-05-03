@@ -10,3 +10,8 @@ tavily-python
 pandas
 openpyxl
 PyPDF2
+pandas
+openpyxl
+PyPDF2
+streamlit
+groq
