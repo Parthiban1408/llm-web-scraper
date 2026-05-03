@@ -7,3 +7,6 @@ groq
 python-dotenv
 lxml
 tavily-python
+pandas
+openpyxl
+PyPDF2
