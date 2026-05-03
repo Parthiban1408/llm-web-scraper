@@ -8,7 +8,7 @@ st.set_page_config(page_title="Roon", layout="wide")
 
 st.title("AI budd")
 
-
+    
 st.write(len(st.secrets["GROQ_API_KEY"]))
 # This function fixes the "Who scored the most runs?" follow-up issue
 def contextualize_search(query, history):
