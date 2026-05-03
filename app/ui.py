@@ -42,7 +42,7 @@ def search_web(query):
 
 # --- 4. SIDEBAR (Data Scientist Mode) ---
 with st.sidebar:
-    st.title("📂 Data Scientist Mode")
+    st.title("📂 File uploader")
     uploaded_file = st.file_uploader("Upload Excel, PDF, or CSV", type=["xlsx", "xls", "pdf", "csv"])
     
     file_context = ""
