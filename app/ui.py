@@ -60,7 +60,29 @@ for msg in st.session_state.messages:
     with st.chat_message(msg["role"], avatar=icon):
         st.markdown(msg["content"])
 
-# Chat Input
+# --- CHAT LOGIC ---
 if user_input := st.chat_input("Ask about IPL 2026 or your files..."):
-    # ... rest of your search logic from your previous ui.py ...
-    pass
+    # 1. Display user message
+    st.session_state.messages.append({"role": "user", "content": user_input})
+    with st.chat_message("user", avatar="👤"):
+        st.markdown(user_input)
+
+    # 2. Process Answer
+    with st.chat_message("assistant", avatar="🤖"):
+        with st.spinner("Thinking..."):
+            # Contextualize query based on history
+            search_query = contextualize_search(user_input, [m["content"] for m in st.session_state.messages])
+            
+            # Get search results
+            if search_query:
+                search_results = search_web(search_query)
+                # Generate response using your parser logic
+                response = chat_with_web(user_input, search_results)
+            else:
+                # Basic response for casual "Hi/Hello"
+                response = "Hello! How can I help you today?"
+
+            st.markdown(response)
+    
+    # 3. Store assistant response
+    st.session_state.messages.append({"role": "assistant", "content": response})
