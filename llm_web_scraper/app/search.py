@@ -3,14 +3,13 @@ import streamlit as st
 from tavily import TavilyClient
 
 def search_web(query):
-    # Retrieve key from environment or replace with string
-    api_key = st.secrets.get("TAVILY_API_KEY") or os.getenv("TAVILY_API_KEY")
-    
     try:
-        client = TavilyClient(api_key=api_key)
+        # Pass the secret directly into the client here
+        client = TavilyClient(api_key=st.secrets["TAVILY_API_KEY"])
+
         response = client.search(
             query=query,
-            search_depth="advanced", # Required for live/recent events
+            search_depth="advanced", 
             max_results=5, 
             include_raw_content=True
         )
