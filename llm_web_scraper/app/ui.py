@@ -4,7 +4,8 @@ from llm_parser import chat_with_web, client as groq_client
 import streamlit as st
 st.write(len(st.secrets["GROQ_API_KEY"]))
 
-
+st.set_page_config(page_title="Roon", layout="wide")
+st.title("AI budd")
 # This function fixes the "Who scored the most runs?" follow-up issue
 def contextualize_search(query, history):
     q = query.lower().strip()
@@ -21,8 +22,6 @@ def contextualize_search(query, history):
         return res.choices[0].message.content.strip()
     return query
 
-st.set_page_config(page_title="Roon", layout="wide")
-st.title("AI budd")
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
