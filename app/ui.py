@@ -94,9 +94,9 @@ def get_omni_response(user_query, history, file_data):
     USER QUERY: {user_query}
     """
 
-    # 4. Process with a high-capacity reasoning model
+# 4. Process with a high-capacity reasoning model
     response = groq_client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
+        model="llama-3-3-70b-versatile", # Try this exact spelling first
         messages=[{"role": "user", "content": final_prompt}],
         temperature=0.3
     )
