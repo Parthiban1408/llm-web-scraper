@@ -37,7 +37,6 @@ with st.sidebar:
 st.title("🚀 AI Budd: Smart Search")
 
 def contextualize_search(query, history):
-    # Only try to contextualize if there is actual history
     if len(history) < 1:
         return query
     
@@ -46,7 +45,7 @@ def contextualize_search(query, history):
         return None
         
     try:
-        prompt = f"History: {history[-3:]}\nFollow-up: {query}\nConvert this into a single standalone Google search query:"
+        prompt = f"History: {history[-3:]}\nFollow-up: {query}\nConvert this into a single standalone search query:"
         res = groq_client.chat.completions.create(
             model="llama-3.1-8b-instant",
             messages=[{"role": "user", "content": prompt}],
@@ -67,7 +66,7 @@ for msg in st.session_state.messages:
 
 # --- CHAT INPUT & LOGIC ---
 if user_input := st.chat_input("Ask about IPL 2026 or your files..."):
-    # Show user message immediately
+    # Show user message
     st.session_state.messages.append({"role": "user", "content": user_input})
     with st.chat_message("user", avatar="👤"):
         st.markdown(user_input)
@@ -76,24 +75,25 @@ if user_input := st.chat_input("Ask about IPL 2026 or your files..."):
         with st.spinner("Processing..."):
             response = ""
             
-            # A. If file is uploaded and user asks about it
+            # A. File Analysis Logic
             if df is not None and ("file" in user_input.lower() or "explain" in user_input.lower() or "data" in user_input.lower()):
-                response = f"I've analyzed **{uploaded_file.name}**. It contains {len(df)} rows and {len(df.columns)} columns. The columns are: {', '.join(df.columns.tolist())}. What would you like to know about this data?"
+                response = f"I've analyzed **{uploaded_file.name}**. It has {len(df)} rows and {len(df.columns)} columns: {', '.join(df.columns.tolist())}."
             
-            # B. Default to Web Search
+            # B. Web Search Logic (Fixed function call)
             else:
                 try:
-                    # Get the refined search term
-                    search_term = contextualize_search(user_input, [m["content"] for m in st.session_state.messages[:-1]])
+                    history_list = [m["content"] for m in st.session_state.messages[:-1]]
+                    search_term = contextualize_search(user_input, history_list)
                     
                     if search_term:
                         results = search_web(search_term)
-                        if results and len(results) > 0:
-                            response = chat_with_web(user_input, results)
+                        if results:
+                            # ADDED: history_list as the 3rd argument to fix the TypeError
+                            response = chat_with_web(user_input, results, history_list)
                         else:
-                            response = f"I searched for '{search_term}' but couldn't find any live results. Please try a different topic."
+                            response = f"I searched for '{search_term}' but found no results."
                     else:
-                        response = "Hello! I'm ready to help with searches or file analysis."
+                        response = "Hello! How can I help you today?"
                 except Exception as e:
                     response = f"I encountered an error: {str(e)}"
 
