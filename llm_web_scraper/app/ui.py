@@ -21,8 +21,8 @@ def contextualize_search(query, history):
         return res.choices[0].message.content.strip()
     return query
 
-st.set_page_config(page_title="2026 Live AI Chat", layout="wide")
-st.title("🌐 AI Web Chat (Live Data)")
+st.set_page_config(page_title="Roon", layout="wide")
+st.title("AI budd")
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
