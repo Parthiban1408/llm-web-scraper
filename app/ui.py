@@ -1,103 +1,72 @@
 import streamlit as st
 import pandas as pd
+import PyPDF2
 from search import search_web
 from llm_parser import chat_with_web, client as groq_client
 
-# 1. Page Configuration
-st.set_page_config(page_title="Roon", page_icon="🚀", layout="wide")
+st.set_page_config(page_title="Roon AI", page_icon="🚀", layout="wide")
 
-# --- CUSTOM UI STYLING ---
-st.markdown("""
-    <style>
-    .stApp { background-color: #0e1117; }
-    .stChatMessage { border-radius: 15px; margin-bottom: 10px; }
-    </style>
-    """, unsafe_allow_html=True)
-
-# --- SIDEBAR: FILE UPLOADER ---
+# --- Enhanced Sidebar ---
 with st.sidebar:
-    st.header("📂 Data Center")
-    uploaded_file = st.file_uploader("Upload a file (CSV, Excel, TXT)", type=["csv", "xlsx", "txt"])
+    st.header("📁 Data Center")
+    uploaded_file = st.file_uploader("Upload Data (CSV, Excel, PDF)", type=["csv", "xlsx", "pdf", "txt"])
     
-    df = None
-    if uploaded_file is not None:
-        try:
-            if uploaded_file.name.endswith('.csv'):
-                df = pd.read_csv(uploaded_file)
-            else:
-                df = pd.read_excel(uploaded_file)
-            st.success(f"Loaded: {uploaded_file.name} ✅")
-        except Exception as e:
-            st.error(f"Error loading file: {e}")
+    file_context = ""
+    df_preview = None
 
-    st.divider()
-    st.info("💡 **Tip:** Ask about market news or your uploaded data.")
+    if uploaded_file:
+        if uploaded_file.name.endswith('.pdf'):
+            reader = PyPDF2.PdfReader(uploaded_file)
+            file_context = " ".join([page.extract_text() for page in reader.pages[:5]]) # First 5 pages
+            st.success("PDF Content Indexed ✅")
+        elif uploaded_file.name.endswith(('.csv', '.xlsx')):
+            df = pd.read_csv(uploaded_file) if uploaded_file.name.endswith('.csv') else pd.read_excel(uploaded_file)
+            df_preview = df.describe().to_string() # Statistical Analysis
+            file_context = f"File: {uploaded_file.name}. Stats: {df_preview}. Columns: {list(df.columns)}"
+            st.success("Data Analyst Mode Active 📊")
 
-# --- MAIN APP INTERFACE ---
-st.title("🚀 AI Budd: Smart Search")
+# --- The "Decision" Brain ---
+def get_ai_response(user_query, history, file_data):
+    # System prompt to set the "Gemini-like" personality
+    system_prompt = """You are Roon, an elite AI with emotional, mathematical, and coding intelligence.
+    - If data is provided, act as a Data Analyst. Perform statistical summaries and reasoning.
+    - For coding/math, answer directly using your internal logic.
+    - For live news, use web search results.
+    - Be concise but deeply insightful."""
 
-def contextualize_search(query, history):
-    if len(history) < 1:
-        return query
+    # Decide if we need web search
+    needs_search = any(word in user_query.lower() for word in ["news", "price", "today", "weather", "latest"])
     
-    q_lower = query.lower().strip()
-    if q_lower in ["hi", "hello", "thanks", "ok"]: 
-        return None
-        
-    try:
-        prompt = f"History: {history[-3:]}\nFollow-up: {query}\nConvert this into a single standalone search query:"
-        res = groq_client.chat.completions.create(
-            model="llama-3.1-8b-instant",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0
-        )
-        return res.choices[0].message.content.strip()
-    except:
-        return query
+    context = ""
+    if needs_search:
+        results = search_web(user_query)
+        context = f"Web Search Results: {results}"
+    
+    full_prompt = f"{system_prompt}\n\nFile Context: {file_data}\n\nUser: {user_query}\nAI:"
+    
+    res = groq_client.chat.completions.create(
+        model="llama-3.3-70b-versatile", # Using a larger model for better reasoning
+        messages=[{"role": "user", "content": full_prompt}],
+        temperature=0.3
+    )
+    return res.choices[0].message.content
+
+# --- Main Interface ---
+st.title("🚀 Roon: Smart Intelligence")
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Display Chat History
 for msg in st.session_state.messages:
-    icon = "👤" if msg["role"] == "user" else "🤖"
-    with st.chat_message(msg["role"], avatar=icon):
-        st.markdown(msg["content"])
+    with st.chat_message(msg["role"]): st.markdown(msg["content"])
 
-# --- CHAT INPUT & LOGIC ---
-if user_input := st.chat_input("Ask about IPL 2026 or your files..."):
+if user_input := st.chat_input("Ask me anything..."):
     st.session_state.messages.append({"role": "user", "content": user_input})
-    with st.chat_message("user", avatar="👤"):
-        st.markdown(user_input)
+    with st.chat_message("user"): st.markdown(user_input)
 
-    with st.chat_message("assistant", avatar="🤖"):
-        with st.spinner("Processing..."):
-            response = ""
-            
-            # A. File Analysis
-            if df is not None and ("file" in user_input.lower() or "explain" in user_input.lower()):
-                response = f"I've analyzed your file. It has {len(df)} rows."
-            
-            # B. Web Search Logic
-            else:
-                try:
-                    history_list = [m["content"] for m in st.session_state.messages[:-1]]
-                    search_term = contextualize_search(user_input, history_list)
-                    
-                    if search_term:
-                        results = search_web(search_term)
-                        
-                        # SAFETY CHECK: Ensure results is a list of dictionaries, not a string
-                        if isinstance(results, list) and len(results) > 0:
-                            response = chat_with_web(user_input, results, history_list)
-                        else:
-                            response = "The search returned an unexpected format. Please try again."
-                    else:
-                        response = "Hello! How can I help you today?"
-                except Exception as e:
-                    # This will help us see exactly WHERE it's failing
-                    response = f"I encountered an error: {str(e)}"
-
+    with st.chat_message("assistant"):
+        with st.spinner("Thinking..."):
+            response = get_ai_response(user_input, st.session_state.messages, file_context)
             st.markdown(response)
     
     st.session_state.messages.append({"role": "assistant", "content": response})
