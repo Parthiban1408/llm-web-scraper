@@ -1,6 +1,9 @@
 import streamlit as st
 from search import search_web
 from llm_parser import chat_with_web, client as groq_client
+import streamlit as st
+st.write(len(st.secrets["GROQ_API_KEY"]))
+
 
 # This function fixes the "Who scored the most runs?" follow-up issue
 def contextualize_search(query, history):
