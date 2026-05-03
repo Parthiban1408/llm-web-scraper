@@ -1,11 +1,14 @@
 import os
 import streamlit as st
 from groq import Groq
+import streamlit as st
+from groq import Groq
+
+# This pulls directly from that Secrets box you just edited
+client = Groq(api_key=st.secrets["GROQ_API_KEY"])
 
 # Initialize Groq Client
-client = Groq(
-    api_key = st.secrets.get("GROQ_API_KEY") or os.getenv("GROQ_API_KEY")
-)
+
 def chat_with_web(context, query, history):
     messages = [
         {
