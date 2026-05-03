@@ -6,7 +6,7 @@ from tavily import TavilyClient
 import io
 
 # --- 1. CONFIGURATION ---
-st.set_page_config(page_title="Roon AI - Data Scientist Mode", layout="wide")
+st.set_page_config(page_title="Roon AI - Assitant bud", layout="wide")
 
 try:
     groq_client = Groq(api_key=st.secrets["GROQ_API_KEY"])
