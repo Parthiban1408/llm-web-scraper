@@ -66,8 +66,10 @@ def get_omni_response(user_query, history, file_data):
     # 4. API Call with Exception Handling to prevent crashes
     try:
         # llama3-70b-8192 is the most stable model for high-reasoning tasks
+    
+        # UPDATED: Use the current supported production model
         response = groq_client.chat.completions.create(
-            model="llama3-70b-8192",
+            model="llama-3.3-70b-versatile", 
             messages=[{"role": "user", "content": content}],
             temperature=0.2,
             max_tokens=2048
