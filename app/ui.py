@@ -66,7 +66,6 @@ for msg in st.session_state.messages:
 
 # --- CHAT INPUT & LOGIC ---
 if user_input := st.chat_input("Ask about IPL 2026 or your files..."):
-    # Show user message
     st.session_state.messages.append({"role": "user", "content": user_input})
     with st.chat_message("user", avatar="👤"):
         st.markdown(user_input)
@@ -75,11 +74,11 @@ if user_input := st.chat_input("Ask about IPL 2026 or your files..."):
         with st.spinner("Processing..."):
             response = ""
             
-            # A. File Analysis Logic
-            if df is not None and ("file" in user_input.lower() or "explain" in user_input.lower() or "data" in user_input.lower()):
-                response = f"I've analyzed **{uploaded_file.name}**. It has {len(df)} rows and {len(df.columns)} columns: {', '.join(df.columns.tolist())}."
+            # A. File Analysis
+            if df is not None and ("file" in user_input.lower() or "explain" in user_input.lower()):
+                response = f"I've analyzed your file. It has {len(df)} rows."
             
-            # B. Web Search Logic (Fixed function call)
+            # B. Web Search Logic
             else:
                 try:
                     history_list = [m["content"] for m in st.session_state.messages[:-1]]
@@ -87,14 +86,16 @@ if user_input := st.chat_input("Ask about IPL 2026 or your files..."):
                     
                     if search_term:
                         results = search_web(search_term)
-                        if results:
-                            # ADDED: history_list as the 3rd argument to fix the TypeError
+                        
+                        # SAFETY CHECK: Ensure results is a list of dictionaries, not a string
+                        if isinstance(results, list) and len(results) > 0:
                             response = chat_with_web(user_input, results, history_list)
                         else:
-                            response = f"I searched for '{search_term}' but found no results."
+                            response = "The search returned an unexpected format. Please try again."
                     else:
                         response = "Hello! How can I help you today?"
                 except Exception as e:
+                    # This will help us see exactly WHERE it's failing
                     response = f"I encountered an error: {str(e)}"
 
             st.markdown(response)
