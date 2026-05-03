@@ -69,12 +69,24 @@ if user_input := st.chat_input("Ask me anything..."):
             response = get_ai_response(user_input, st.session_state.messages, file_context)
             st.markdown(response)
             # --- The "Decision" Brain ---
+# --- The "Decision" Brain ---
 def get_ai_response(user_query, history, file_data):
-    system_prompt = """You are Roon, an elite AI. 
-    Use the provided Web Search Results to answer real-time questions. 
-    If the search results are present, use them as your primary source of truth."""
+    # 1. AGGRESSIVE SYSTEM PROMPT
+    # We must explicitly forbid the AI from saying its default cutoff phrase
+    system_prompt = """You are Roon, an elite AI.
+    
+    CRITICAL RULES:
+    1. You HAVE real-time internet access via the "WEB RESULTS" block provided below.
+    2. NEVER say "As of my knowledge cutoff". 
+    3. NEVER say "I don't have real-time data".
+    4. Base your answer entirely on the WEB RESULTS. Speak confidently as if you searched it yourself."""
 
-    search_keywords = ["news", "price", "today", "yesterday", "current", "latest", "weather", "2024", "2025", "2026", "live", "stock"]
+    # 2. Trigger words (added 'petrol' just in case)
+    search_keywords = [
+        "news", "price", "today", "yesterday", "current", "latest", "weather",
+        "2024", "2025", "2026", "live", "stock", "petrol"
+    ]
+    
     needs_search = any(word in user_query.lower() for word in search_keywords)
     
     web_context = ""
@@ -82,8 +94,6 @@ def get_ai_response(user_query, history, file_data):
         try:
             raw_results = search_web(user_query)
             
-            # --- CRITICAL FIX: CLEAN THE DATA ---
-            # This turns [{'content': 'price is 100'}] into "Source: price is 100"
             cleaned_results = []
             for res in raw_results:
                 if isinstance(res, dict):
@@ -91,18 +101,22 @@ def get_ai_response(user_query, history, file_data):
                     cleaned_results.append(f"- {content}")
             
             if cleaned_results:
-                web_context = "\n\nWEB SEARCH RESULTS:\n" + "\n".join(cleaned_results)
+                web_context = "\n\n--- WEB RESULTS ---\n" + "\n".join(cleaned_results)
+                # DEBUG: Print to your terminal so you can verify Tavily is working
+                print(f"SEARCH SUCCESS! Data found: {cleaned_results[0][:100]}...") 
             else:
-                web_context = "\n\n(Search returned no specific data points.)"
+                web_context = "\n\n--- WEB RESULTS ---\nNo data found from search."
+                print("SEARCH FAILED: Tavily returned empty results.")
         except Exception as e:
-            web_context = f"\n\n(Search Error: {str(e)})"
+            web_context = f"\n\n--- WEB RESULTS ---\nSearch Error: {str(e)}"
+            print(f"SEARCH CRASHED: {str(e)}")
     
-    # Combine everything
-    full_prompt = f"{system_prompt}\n\nFile Context: {file_data}{web_context}\n\nUser Question: {user_query}\nAI Answer:"
+    # 3. Final Assembly
+    full_prompt = f"{system_prompt}\n\nFile Context: {file_data}{web_context}\n\nUser Question: {user_query}\nAnswer:"
     
     res = groq_client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         messages=[{"role": "user", "content": full_prompt}],
-        temperature=0.2 # Lower temperature makes it stick to the facts
+        temperature=0.1 # Very low temperature to force strict obedience to the prompt
     )
     return res.choices[0].message.content
