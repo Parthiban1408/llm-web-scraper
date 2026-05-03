@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from search import search_web
-from llm_parser import chat_with_web, client as groq_client
+from .llm_parser import chat_with_web, client as groq_client
 
 # 1. Page Configuration
 st.set_page_config(page_title="Roon", page_icon="🚀", layout="wide")
