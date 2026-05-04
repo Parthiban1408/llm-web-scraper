@@ -70,7 +70,7 @@ def get_ai_response(user_query, history, file_context):
     }
 
     # Prepare search context if needed
-    search_keywords = ["price", "today", "latest", "news", "current", "weather"]
+    search_keywords = ["price", "today", "latest", "news", "current", "weather","live"]
     needs_search = any(word in user_query.lower() for word in search_keywords)
     
     web_context = ""
