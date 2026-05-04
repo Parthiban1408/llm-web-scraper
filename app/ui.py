@@ -96,7 +96,7 @@ def get_ai_response(user_query, history, file_context):
 
     # Call the API with the full conversation list
     response = groq_client.chat.completions.create(
-        model="llama-3.3-70b-versatile", 
+        model="llama-3.1-8b-instant", 
         messages=api_messages, # Now sending the full list, not just one string
         temperature=0.1
     )
