@@ -54,16 +54,22 @@ with st.sidebar:
                 st.info("AI can now see the top rows of your data.")
 
 # --- 5. AI LOGIC ---
-def get_ai_response(user_query, history, file_context):
-    system_prompt = f"""You are Roon, a high-level Data Scientist and Research AI.
-    
-    FILE DATA: {file_context if file_context else "No file uploaded."}
-    
-    INSTRUCTIONS:
-    1. If the user asks about the uploaded file, prioritize the FILE DATA.
-    2. If the user asks for current prices or news, use the WEB RESULTS.
-    3. NEVER mention a 'knowledge cutoff'. Be the expert."""
 
+def get_ai_response(user_query, history, file_context):
+    # Base instructions for the AI
+    system_message = {
+        "role": "system",
+        "content": f"""You are Roon, a high-level Data Scientist and Research AI.
+        
+        FILE DATA: {file_context if file_context else "No file uploaded."}
+        
+        INSTRUCTIONS:
+        1. If the user asks about the uploaded file, prioritize the FILE DATA.
+        2. If the user asks for current prices or news, use the WEB RESULTS provided.
+        3. NEVER mention a 'knowledge cutoff'. Be the expert."""
+    }
+
+    # Prepare search context if needed
     search_keywords = ["price", "today", "latest", "news", "current", "weather"]
     needs_search = any(word in user_query.lower() for word in search_keywords)
     
@@ -76,11 +82,22 @@ def get_ai_response(user_query, history, file_context):
                 web_context = "\n\nWEB RESULTS:\n" + "\n\n".join(cleaned)
                 status.update(label="✅ Live data retrieved!", state="complete")
 
-    full_prompt = f"{system_prompt}\n\n{web_context}\n\nUser Question: {user_query}\nAnswer:"
+    # Build the message history for Groq
+    # We include the system prompt, then the history, then the latest query with web results
+    api_messages = [system_message]
     
+    # Add previous conversation turns (History)
+    for msg in history:
+        api_messages.append({"role": msg["role"], "content": msg["content"]})
+    
+    # Append the current query flavored with the web results
+    current_content = f"{web_context}\n\nUser Question: {user_query}"
+    api_messages.append({"role": "user", "content": current_content})
+
+    # Call the API with the full conversation list
     response = groq_client.chat.completions.create(
         model="llama-3.3-70b-versatile", 
-        messages=[{"role": "user", "content": full_prompt}],
+        messages=api_messages, # Now sending the full list, not just one string
         temperature=0.1
     )
     return response.choices[0].message.content
