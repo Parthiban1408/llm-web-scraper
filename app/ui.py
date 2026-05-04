@@ -56,63 +56,78 @@ with st.sidebar:
 
 
 
-# --- 5. UPDATED AI LOGIC WITH DATE-AWARE SEARCH ---
+
+# --- 5. UPDATED AI LOGIC: SMART MEMORY + LIVE SEARCH ---
 def get_ai_response(user_query, history, file_context):
-    # Get current date for context
     current_date = datetime.now().strftime("%B %d, %Y")
     
+    # STEP 1: CONTEXTUAL QUERY REWRITING
+    # This turns "in India" into "Current price of sugar in India May 2026"
+    search_refiner_prompt = f"""
+    Given the following conversation history and a new user question, 
+    rewrite the question into a standalone search query for Google/Tavily.
+    If the question is a follow-up, include the main subject from the history.
+    Today's Date: {current_date}
+    
+    History: {history[-3:] if history else "None"}
+    New Question: {user_query}
+    Standalone Search Query:"""
+
+    try:
+        refiner_res = groq_client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[{"role": "user", "content": search_refiner_prompt}],
+            temperature=0.0
+        )
+        refined_query = refiner_res.choices[0].message.content.strip()
+    except:
+        refined_query = user_query # Fallback
+
+    # STEP 2: THE SYSTEM PROMPT
     system_message = {
         "role": "system",
-        "content": f"""You are Roon, a high-level Data Scientist and Research AI.
+        "content": f"""You are Roon, an elite Data Scientist. 
         TODAY'S DATE: {current_date}
-        
         FILE DATA: {file_context if file_context else "No file uploaded."}
         
-        INSTRUCTIONS:
-        1. ALWAYS prioritize the WEB RESULTS provided for news, events, or prices.
-        2. If the user mentions a past year (e.g., 2024, 2025) or a specific date, fetch data for that period.
-        3. Otherwise, ALWAYS assume the user wants 'Today's' live news.
-        4. NEVER mention a 'knowledge cutoff'. If you have web results, you are current."""
+        STRICT RULES:
+        1. Use ONLY the 'LIVE WEB RESULTS' for news, scores, and prices. 
+        2. If you don't see the specific info in the web results, say 'Data not found in live search'—DO NOT GUESS.
+        3. For IPL matches or elections, always look for 'Live Score' or 'Current Trends'."""
     }
 
-    # NEW LOGIC: Always search unless it's a generic greeting or math
-    non_search_phrases = ["hello", "hi", "who are you", "calculate", "1+", "how are you"]
-    is_generic = any(phrase in user_query.lower() for phrase in non_search_phrases)
-    
+    # STEP 3: EXECUTE SEARCH
     web_context = ""
-    # If it's not a tiny generic phrase, we search the web to prevent hallucinations
-    if not is_generic:
-        # Detect if user is asking about a specific date
-        search_query = user_query
-        if "today" in user_query.lower() or not any(year in user_query for year in ["2024", "2025", "2023"]):
-            # If no specific past year is mentioned, force "today" or "May 2026" into the search
-            search_query = f"{user_query} news today {current_date}"
+    with st.status(f"🔍 Searching for: {refined_query}", expanded=False) as status:
+        try:
+            results = search_web(refined_query)
+            if results:
+                cleaned = [f"Source: {r['url']}\nContent: {r['content']}" for r in results]
+                web_context = "\n\n--- LIVE WEB RESULTS ---\n" + "\n\n".join(cleaned)
+                status.update(label="✅ Live data retrieved!", state="complete")
+            else:
+                web_context = "\nNo live results found for this specific query."
+                status.update(label="⚠️ No results found.", state="error")
+        except Exception as e:
+            status.update(label="❌ Search Error", state="error")
 
-        with st.status(f"🌐 Fetching live data for: {search_query}", expanded=False) as status:
-            try:
-                results = search_web(search_query)
-                if results:
-                    cleaned = [f"Source: {r['url']}\nContent: {r['content']}" for r in results]
-                    web_context = "\n\n--- LIVE WEB RESULTS ---\n" + "\n\n".join(cleaned)
-                    status.update(label="✅ Live data retrieved!", state="complete")
-                else:
-                    status.update(label="⚠️ No results found. Answering from memory.", state="error")
-            except Exception as e:
-                status.update(label=f"❌ Search Error: {e}", state="error")
-
-    # Build the message history for Groq
+    # STEP 4: FINAL RESPONSE GENERATION
     api_messages = [system_message]
-    for msg in history[-10:]: # Keep last 10 messages for memory
+    
+    # Add history for conversational memory
+    for msg in history[-10:]:
         api_messages.append({"role": msg["role"], "content": msg["content"]})
     
-    # Final query sent to AI
-    current_content = f"{web_context}\n\nUser Question: {user_query}"
-    api_messages.append({"role": "user", "content": current_content})
+    # Add the refined context and current user query
+    api_messages.append({
+        "role": "user", 
+        "content": f"Contextual Live Data: {web_context}\n\nUser Question: {user_query}"
+    })
 
     response = groq_client.chat.completions.create(
         model="llama-3.3-70b-versatile", 
         messages=api_messages,
-        temperature=0.1
+        temperature=0.0 # 0.0 is best for accuracy/no hallucinations
     )
     return response.choices[0].message.content
 
