@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import PyPDF2
-from datetime import datetime
 from groq import Groq
 from tavily import TavilyClient
 import io
@@ -16,41 +15,24 @@ except Exception as e:
     st.error("Missing API Keys in secrets.toml")
     st.stop()
 
-
-# --- 2. ENHANCED FILE PROCESSING (Senior DS Level) ---
+# --- 2. FILE PROCESSING FUNCTIONS ---
 def process_file(uploaded_file):
-    """Extracts deep statistical insights and data samples."""
+    """Extracts text or data from Excel/PDF."""
     try:
-        if uploaded_file.name.endswith(('.xlsx', '.xls', '.csv')):
-            df = pd.read_excel(uploaded_file) if not uploaded_file.name.endswith('.csv') else pd.read_csv(uploaded_file)
-            
-            # Statistical Metadata for Senior Analysis
-            buffer = io.StringIO()
-            df.info(buf=buffer)
-            info_str = buffer.getvalue()
-            stats_summary = df.describe(include='all').to_string()
-            missing_values = df.isnull().sum().to_string()
-            
-            return f"""
-            DATASET METADATA:
-            {info_str}
-            
-            STATISTICAL DESCRIPTIVES:
-            {stats_summary}
-            
-            MISSING VALUES:
-            {missing_values}
-            
-            DATA SAMPLE (TOP 50 ROWS):
-            {df.head(50).to_string()}
-            """
+        if uploaded_file.name.endswith('.xlsx') or uploaded_file.name.endswith('.xls'):
+            df = pd.read_excel(uploaded_file)
+            return f"Excel Data Summary:\n{df.head(20).to_string()}" # Send first 20 rows
         elif uploaded_file.name.endswith('.pdf'):
             pdf_reader = PyPDF2.PdfReader(uploaded_file)
-            # Increased page limit for deeper context
-            text = "\n".join([page.extract_text() for page in pdf_reader.pages[:15]])
-            return f"FULL PDF CONTENT (EXCERPT):\n{text}"
+            text = ""
+            for page in pdf_reader.pages[:5]: # Limit to first 5 pages for context window
+                text += page.extract_text()
+            return f"PDF Content:\n{text}"
+        elif uploaded_file.name.endswith('.csv'):
+            df = pd.read_csv(uploaded_file)
+            return f"CSV Data Summary:\n{df.head(20).to_string()}"
     except Exception as e:
-        return f"Error in data extraction: {e}"
+        return f"Error reading file: {e}"
     return ""
 
 # --- 3. WEB SEARCH ---
@@ -71,70 +53,55 @@ with st.sidebar:
             if "Excel Data" in file_context or "CSV" in file_context:
                 st.info("AI can now see the top rows of your data.")
 
+# --- 5. AI LOGIC ---
 
-
-
-
-# --- 5. SENIOR AI LOGIC (High-Level Analysis) ---
-# --- 5. SMART SENIOR AI LOGIC (No More Greeting Madness) ---
 def get_ai_response(user_query, history, file_context):
-    current_date = datetime.now().strftime("%B %d, %Y")
-    
-    # Check if it's a simple greeting or small talk
-    greetings = ["hi", "hello", "hey", "how are you", "who are you", "gm", "gn"]
-    is_greeting = user_query.lower().strip() in greetings
-
-    # 1. GREETING SHORT-CIRCUIT (Saves your Rate Limit and avoids crazy analysis)
-    if is_greeting:
-        return "Hello! I'm Roon. I'm ready to analyze your files or fetch live market data. What's on your mind today?"
-
-    # 2. CONTEXTUAL QUERY REWRITING
-    search_refiner_prompt = f"Rewrite for search. Today: {current_date}. History: {history[-2:]}. Question: {user_query}"
-    try:
-        refiner_res = groq_client.chat.completions.create(
-            model="llama-3.1-8b-instant", # Using smaller model to save rate limits
-            messages=[{"role": "user", "content": search_refiner_prompt}],
-            temperature=0
-        )
-        refined_query = refiner_res.choices[0].message.content.strip()
-    except:
-        refined_query = user_query
-
-    # 3. SENIOR DATA SCIENTIST SYSTEM PROMPT
+    # Base instructions for the AI
     system_message = {
         "role": "system",
-        "content": f"""You are a Principal Data Scientist. TODAY: {current_date}. 
-        FILE DATA: {file_context if file_context else "None"}
-        RULES:
-        - For DATA/NEWS: Use Markdown tables and statistical insights.
-        - For CHAT: Be concise and professional.
-        - NEVER analyze a greeting as a dataset."""
+        "content": f"""You are Roon, a high-level Data Scientist and Research AI.
+        
+        FILE DATA: {file_context if file_context else "No file uploaded."}
+        
+        INSTRUCTIONS:
+        1. If the user asks about the uploaded file, prioritize the FILE DATA.
+        2. If the user asks for current prices or news, use the WEB RESULTS provided.
+        3. NEVER mention a 'knowledge cutoff'. Be the expert."""
     }
 
-    # 4. LIVE SEARCH
+    # Prepare search context if needed
+    search_keywords = ["price", "today", "latest", "news", "current", "weather"]
+    needs_search = any(word in user_query.lower() for word in search_keywords)
+    
     web_context = ""
-    with st.status(f"🔍 Intel Search: {refined_query}", expanded=False):
-        try:
-            results = search_web(refined_query)
+    if needs_search:
+        with st.status("🌐 Fetching live market data...", expanded=False) as status:
+            results = search_web(user_query)
             if results:
-                web_context = "\n\n--- LIVE DATA ---\n" + "\n".join([r['content'] for r in results])
-        except:
-            web_context = "Search unavailable."
+                cleaned = [f"Source: {r['url']}\nContent: {r['content']}" for r in results]
+                web_context = "\n\nWEB RESULTS:\n" + "\n\n".join(cleaned)
+                status.update(label="✅ Live data retrieved!", state="complete")
 
-    # 5. FINAL RESPONSE
+    # Build the message history for Groq
+    # We include the system prompt, then the history, then the latest query with web results
     api_messages = [system_message]
-    for msg in history[-5:]: api_messages.append({"role": msg["role"], "content": msg["content"]})
-    api_messages.append({"role": "user", "content": f"DATA: {web_context}\n\nUSER: {user_query}"})
+    
+    # Add previous conversation turns (History)
+    for msg in history:
+        api_messages.append({"role": msg["role"], "content": msg["content"]})
+    
+    # Append the current query flavored with the web results
+    current_content = f"{web_context}\n\nUser Question: {user_query}"
+    api_messages.append({"role": "user", "content": current_content})
 
-    try:
-        response = groq_client.chat.completions.create(
-            model="llama-3.1-8b-instant", 
-            messages=api_messages,
-            temperature=0.1
-        )
-        return response.choices[0].message.content
-    except Exception as e:
-        return "⚠️ Rate limit hit. Please wait 60 seconds or use a smaller model like 'llama-3.1-8b-instant'."
+    # Call the API with the full conversation list
+    response = groq_client.chat.completions.create(
+        model="llama-3.3-70b-versatile", 
+        messages=api_messages, # Now sending the full list, not just one string
+        temperature=0.1
+    )
+    return response.choices[0].message.content
+
 # --- 6. CHAT UI ---
 st.title("🤖 Roon AI")
 
