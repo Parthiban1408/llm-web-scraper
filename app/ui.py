@@ -16,24 +16,41 @@ except Exception as e:
     st.error("Missing API Keys in secrets.toml")
     st.stop()
 
-# --- 2. FILE PROCESSING FUNCTIONS ---
+
+# --- 2. ENHANCED FILE PROCESSING (Senior DS Level) ---
 def process_file(uploaded_file):
-    """Extracts text or data from Excel/PDF."""
+    """Extracts deep statistical insights and data samples."""
     try:
-        if uploaded_file.name.endswith('.xlsx') or uploaded_file.name.endswith('.xls'):
-            df = pd.read_excel(uploaded_file)
-            return f"Excel Data Summary:\n{df.head(20).to_string()}" # Send first 20 rows
+        if uploaded_file.name.endswith(('.xlsx', '.xls', '.csv')):
+            df = pd.read_excel(uploaded_file) if not uploaded_file.name.endswith('.csv') else pd.read_csv(uploaded_file)
+            
+            # Statistical Metadata for Senior Analysis
+            buffer = io.StringIO()
+            df.info(buf=buffer)
+            info_str = buffer.getvalue()
+            stats_summary = df.describe(include='all').to_string()
+            missing_values = df.isnull().sum().to_string()
+            
+            return f"""
+            DATASET METADATA:
+            {info_str}
+            
+            STATISTICAL DESCRIPTIVES:
+            {stats_summary}
+            
+            MISSING VALUES:
+            {missing_values}
+            
+            DATA SAMPLE (TOP 50 ROWS):
+            {df.head(50).to_string()}
+            """
         elif uploaded_file.name.endswith('.pdf'):
             pdf_reader = PyPDF2.PdfReader(uploaded_file)
-            text = ""
-            for page in pdf_reader.pages[:5]: # Limit to first 5 pages for context window
-                text += page.extract_text()
-            return f"PDF Content:\n{text}"
-        elif uploaded_file.name.endswith('.csv'):
-            df = pd.read_csv(uploaded_file)
-            return f"CSV Data Summary:\n{df.head(20).to_string()}"
+            # Increased page limit for deeper context
+            text = "\n".join([page.extract_text() for page in pdf_reader.pages[:15]])
+            return f"FULL PDF CONTENT (EXCERPT):\n{text}"
     except Exception as e:
-        return f"Error reading file: {e}"
+        return f"Error in data extraction: {e}"
     return ""
 
 # --- 3. WEB SEARCH ---
@@ -57,80 +74,55 @@ with st.sidebar:
 
 
 
-# --- 5. UPDATED AI LOGIC: SMART MEMORY + LIVE SEARCH ---
+
+# --- 5. SENIOR AI LOGIC (High-Level Analysis) ---
 def get_ai_response(user_query, history, file_context):
     current_date = datetime.now().strftime("%B %d, %Y")
     
-    # STEP 1: CONTEXTUAL QUERY REWRITING
-    # This turns "in India" into "Current price of sugar in India May 2026"
-    search_refiner_prompt = f"""
-    Given the following conversation history and a new user question, 
-    rewrite the question into a standalone search query for Google/Tavily.
-    If the question is a follow-up, include the main subject from the history.
-    Today's Date: {current_date}
-    
-    History: {history[-3:] if history else "None"}
-    New Question: {user_query}
-    Standalone Search Query:"""
+    # Contextual Query Rewriting (keeping your memory logic)
+    search_refiner_prompt = f"Rewrite this as a standalone search query based on history. Today: {current_date}. History: {history[-2:]}. Question: {user_query}"
+    refiner_res = groq_client.chat.completions.create(model="llama-3.1-8b-instant", messages=[{"role": "user", "content": search_refiner_prompt}], temperature=0)
+    refined_query = refiner_res.choices[0].message.content.strip()
 
-    try:
-        refiner_res = groq_client.chat.completions.create(
-            model="llama-3.1-8b-instant",
-            messages=[{"role": "user", "content": search_refiner_prompt}],
-            temperature=0.0
-        )
-        refined_query = refiner_res.choices[0].message.content.strip()
-    except:
-        refined_query = user_query # Fallback
-
-    # STEP 2: THE SYSTEM PROMPT
+    # SENIOR DATA SCIENTIST SYSTEM PROMPT
     system_message = {
         "role": "system",
-        "content": f"""You are Roon, an elite Data Scientist. 
+        "content": f"""You are a Principal Data Scientist and Market Strategist. 
         TODAY'S DATE: {current_date}
-        FILE DATA: {file_context if file_context else "No file uploaded."}
+        FILE CONTEXT: {file_context if file_context else "No file uploaded."}
         
-        STRICT RULES:
-        1. Use ONLY the 'LIVE WEB RESULTS' for news, scores, and prices. 
-        2. If you don't see the specific info in the web results, say 'Data not found in live search'—DO NOT GUESS.
-        3. For IPL matches or elections, always look for 'Live Score' or 'Current Trends'."""
+        ANALYSIS PROTOCOL:
+        1. When analyzing files, provide:
+           - Statistical Rigor: Identify correlations, outliers, and distribution anomalies.
+           - Business Intelligence: Translate data points into actionable strategic advice.
+           - Structure: Use clean Markdown tables, bold headers, and crisp bullet points.
+        2. Combine FILE DATA with LIVE WEB RESULTS for a holistic 'Macro vs Micro' view.
+        3. If data is missing or insufficient, state the statistical limitation clearly.
+        4. Tone: Professional, decisive, and insightful. No fluff."""
     }
 
-    # STEP 3: EXECUTE SEARCH
+    # Execute Search (keeping your live data logic)
     web_context = ""
-    with st.status(f"🔍 Searching for: {refined_query}", expanded=False) as status:
-        try:
-            results = search_web(refined_query)
-            if results:
-                cleaned = [f"Source: {r['url']}\nContent: {r['content']}" for r in results]
-                web_context = "\n\n--- LIVE WEB RESULTS ---\n" + "\n\n".join(cleaned)
-                status.update(label="✅ Live data retrieved!", state="complete")
-            else:
-                web_context = "\nNo live results found for this specific query."
-                status.update(label="⚠️ No results found.", state="error")
-        except Exception as e:
-            status.update(label="❌ Search Error", state="error")
+    with st.status(f"🔍 Senior Intel Retrieval: {refined_query}", expanded=False):
+        results = search_web(refined_query)
+        if results:
+            web_context = "\n\n--- LIVE MARKET INTELLIGENCE ---\n" + "\n\n".join([f"Source: {r['url']}\n{r['content']}" for r in results])
 
-    # STEP 4: FINAL RESPONSE GENERATION
     api_messages = [system_message]
+    for msg in history[-10:]: api_messages.append({"role": msg["role"], "content": msg["content"]})
     
-    # Add history for conversational memory
-    for msg in history[-10:]:
-        api_messages.append({"role": msg["role"], "content": msg["content"]})
-    
-    # Add the refined context and current user query
+    # Final query with refined context
     api_messages.append({
         "role": "user", 
-        "content": f"Contextual Live Data: {web_context}\n\nUser Question: {user_query}"
+        "content": f"INTEGRATED CONTEXT:\n{web_context}\n\nUSER REQUEST: {user_query}"
     })
 
     response = groq_client.chat.completions.create(
         model="llama-3.3-70b-versatile", 
         messages=api_messages,
-        temperature=0.0 # 0.0 is best for accuracy/no hallucinations
+        temperature=0.1 # Low temperature for analytical precision
     )
     return response.choices[0].message.content
-
 # --- 6. CHAT UI ---
 st.title("🤖 Roon AI")
 
