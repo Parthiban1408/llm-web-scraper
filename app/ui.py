@@ -76,53 +76,65 @@ with st.sidebar:
 
 
 # --- 5. SENIOR AI LOGIC (High-Level Analysis) ---
+# --- 5. SMART SENIOR AI LOGIC (No More Greeting Madness) ---
 def get_ai_response(user_query, history, file_context):
     current_date = datetime.now().strftime("%B %d, %Y")
     
-    # Contextual Query Rewriting (keeping your memory logic)
-    search_refiner_prompt = f"Rewrite this as a standalone search query based on history. Today: {current_date}. History: {history[-2:]}. Question: {user_query}"
-    refiner_res = groq_client.chat.completions.create(model="llama-3.1-8b-instant", messages=[{"role": "user", "content": search_refiner_prompt}], temperature=0)
-    refined_query = refiner_res.choices[0].message.content.strip()
+    # Check if it's a simple greeting or small talk
+    greetings = ["hi", "hello", "hey", "how are you", "who are you", "gm", "gn"]
+    is_greeting = user_query.lower().strip() in greetings
 
-    # SENIOR DATA SCIENTIST SYSTEM PROMPT
+    # 1. GREETING SHORT-CIRCUIT (Saves your Rate Limit and avoids crazy analysis)
+    if is_greeting:
+        return "Hello! I'm Roon. I'm ready to analyze your files or fetch live market data. What's on your mind today?"
+
+    # 2. CONTEXTUAL QUERY REWRITING
+    search_refiner_prompt = f"Rewrite for search. Today: {current_date}. History: {history[-2:]}. Question: {user_query}"
+    try:
+        refiner_res = groq_client.chat.completions.create(
+            model="llama-3.1-8b-instant", # Using smaller model to save rate limits
+            messages=[{"role": "user", "content": search_refiner_prompt}],
+            temperature=0
+        )
+        refined_query = refiner_res.choices[0].message.content.strip()
+    except:
+        refined_query = user_query
+
+    # 3. SENIOR DATA SCIENTIST SYSTEM PROMPT
     system_message = {
         "role": "system",
-        "content": f"""You are a Principal Data Scientist and Market Strategist. 
-        TODAY'S DATE: {current_date}
-        FILE CONTEXT: {file_context if file_context else "No file uploaded."}
-        
-        ANALYSIS PROTOCOL:
-        1. When analyzing files, provide:
-           - Statistical Rigor: Identify correlations, outliers, and distribution anomalies.
-           - Business Intelligence: Translate data points into actionable strategic advice.
-           - Structure: Use clean Markdown tables, bold headers, and crisp bullet points.
-        2. Combine FILE DATA with LIVE WEB RESULTS for a holistic 'Macro vs Micro' view.
-        3. If data is missing or insufficient, state the statistical limitation clearly.
-        4. Tone: Professional, decisive, and insightful. No fluff."""
+        "content": f"""You are a Principal Data Scientist. TODAY: {current_date}. 
+        FILE DATA: {file_context if file_context else "None"}
+        RULES:
+        - For DATA/NEWS: Use Markdown tables and statistical insights.
+        - For CHAT: Be concise and professional.
+        - NEVER analyze a greeting as a dataset."""
     }
 
-    # Execute Search (keeping your live data logic)
+    # 4. LIVE SEARCH
     web_context = ""
-    with st.status(f"🔍 Senior Intel Retrieval: {refined_query}", expanded=False):
-        results = search_web(refined_query)
-        if results:
-            web_context = "\n\n--- LIVE MARKET INTELLIGENCE ---\n" + "\n\n".join([f"Source: {r['url']}\n{r['content']}" for r in results])
+    with st.status(f"🔍 Intel Search: {refined_query}", expanded=False):
+        try:
+            results = search_web(refined_query)
+            if results:
+                web_context = "\n\n--- LIVE DATA ---\n" + "\n".join([r['content'] for r in results])
+        except:
+            web_context = "Search unavailable."
 
+    # 5. FINAL RESPONSE
     api_messages = [system_message]
-    for msg in history[-10:]: api_messages.append({"role": msg["role"], "content": msg["content"]})
-    
-    # Final query with refined context
-    api_messages.append({
-        "role": "user", 
-        "content": f"INTEGRATED CONTEXT:\n{web_context}\n\nUSER REQUEST: {user_query}"
-    })
+    for msg in history[-5:]: api_messages.append({"role": msg["role"], "content": msg["content"]})
+    api_messages.append({"role": "user", "content": f"DATA: {web_context}\n\nUSER: {user_query}"})
 
-    response = groq_client.chat.completions.create(
-        model="llama-3.3-70b-versatile", 
-        messages=api_messages,
-        temperature=0.1 # Low temperature for analytical precision
-    )
-    return response.choices[0].message.content
+    try:
+        response = groq_client.chat.completions.create(
+            model="llama-3.3-70b-versatile", 
+            messages=api_messages,
+            temperature=0.1
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        return "⚠️ Rate limit hit. Please wait 60 seconds or use a smaller model like 'llama-3.1-8b-instant'."
 # --- 6. CHAT UI ---
 st.title("🤖 Roon AI")
 
