@@ -128,7 +128,7 @@ def get_ai_response(user_query, history, file_context):
 
     try:
         response = groq_client.chat.completions.create(
-            model="llama-3.3-70b-versatile", 
+            model="llama-3.1-8b-instant", 
             messages=api_messages,
             temperature=0.1
         )
