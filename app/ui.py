@@ -53,51 +53,64 @@ with st.sidebar:
             if "Excel Data" in file_context or "CSV" in file_context:
                 st.info("AI can now see the top rows of your data.")
 
-# --- 5. AI LOGIC ---
 
+
+# --- 5. UPDATED AI LOGIC WITH DATE-AWARE SEARCH ---
 def get_ai_response(user_query, history, file_context):
-    # Base instructions for the AI
+    # Get current date for context
+    current_date = datetime.now().strftime("%B %d, %Y")
+    
     system_message = {
         "role": "system",
         "content": f"""You are Roon, a high-level Data Scientist and Research AI.
+        TODAY'S DATE: {current_date}
         
         FILE DATA: {file_context if file_context else "No file uploaded."}
         
         INSTRUCTIONS:
-        1. If the user asks about the uploaded file, prioritize the FILE DATA.
-        2. If the user asks for current prices or news, use the WEB RESULTS provided.
-        3. NEVER mention a 'knowledge cutoff'. Be the expert."""
+        1. ALWAYS prioritize the WEB RESULTS provided for news, events, or prices.
+        2. If the user mentions a past year (e.g., 2024, 2025) or a specific date, fetch data for that period.
+        3. Otherwise, ALWAYS assume the user wants 'Today's' live news.
+        4. NEVER mention a 'knowledge cutoff'. If you have web results, you are current."""
     }
 
-    # Prepare search context if needed
-    search_keywords = ["price", "today", "latest", "news", "current", "weather"]
-    needs_search = any(word in user_query.lower() for word in search_keywords)
+    # NEW LOGIC: Always search unless it's a generic greeting or math
+    non_search_phrases = ["hello", "hi", "who are you", "calculate", "1+", "how are you"]
+    is_generic = any(phrase in user_query.lower() for phrase in non_search_phrases)
     
     web_context = ""
-    if needs_search:
-        with st.status("🌐 Fetching live market data...", expanded=False) as status:
-            results = search_web(user_query)
-            if results:
-                cleaned = [f"Source: {r['url']}\nContent: {r['content']}" for r in results]
-                web_context = "\n\nWEB RESULTS:\n" + "\n\n".join(cleaned)
-                status.update(label="✅ Live data retrieved!", state="complete")
+    # If it's not a tiny generic phrase, we search the web to prevent hallucinations
+    if not is_generic:
+        # Detect if user is asking about a specific date
+        search_query = user_query
+        if "today" in user_query.lower() or not any(year in user_query for year in ["2024", "2025", "2023"]):
+            # If no specific past year is mentioned, force "today" or "May 2026" into the search
+            search_query = f"{user_query} news today {current_date}"
+
+        with st.status(f"🌐 Fetching live data for: {search_query}", expanded=False) as status:
+            try:
+                results = search_web(search_query)
+                if results:
+                    cleaned = [f"Source: {r['url']}\nContent: {r['content']}" for r in results]
+                    web_context = "\n\n--- LIVE WEB RESULTS ---\n" + "\n\n".join(cleaned)
+                    status.update(label="✅ Live data retrieved!", state="complete")
+                else:
+                    status.update(label="⚠️ No results found. Answering from memory.", state="error")
+            except Exception as e:
+                status.update(label=f"❌ Search Error: {e}", state="error")
 
     # Build the message history for Groq
-    # We include the system prompt, then the history, then the latest query with web results
     api_messages = [system_message]
-    
-    # Add previous conversation turns (History)
-    for msg in history:
+    for msg in history[-10:]: # Keep last 10 messages for memory
         api_messages.append({"role": msg["role"], "content": msg["content"]})
     
-    # Append the current query flavored with the web results
+    # Final query sent to AI
     current_content = f"{web_context}\n\nUser Question: {user_query}"
     api_messages.append({"role": "user", "content": current_content})
 
-    # Call the API with the full conversation list
     response = groq_client.chat.completions.create(
         model="llama-3.3-70b-versatile", 
-        messages=api_messages, # Now sending the full list, not just one string
+        messages=api_messages,
         temperature=0.1
     )
     return response.choices[0].message.content
