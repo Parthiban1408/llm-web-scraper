@@ -129,7 +129,7 @@ def get_ai_response(user_query, history, file_context):
     response = groq_client.chat.completions.create(
         model="llama-3.1-8b-instant",
         messages=api_messages,
-        temperature=1.0 # Higher temperature for more "ChatGPT-like" fluidity
+        temperature=0.0 # Higher temperature for more "ChatGPT-like" fluidity
     )
     return response.choices[0].message.content
 
