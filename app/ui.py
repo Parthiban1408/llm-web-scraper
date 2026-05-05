@@ -96,7 +96,7 @@ def get_ai_response(user_query, history, file_context):
     
     # Live Search Integration (Only triggers if needed)
     web_results = ""
-    search_keywords = ["price", "today", "latest", "news"]
+    search_keywords = ["price", "today", "latest", "news","live","current"]
     if any(word in user_query.lower() for word in search_keywords):
         with st.status("🌐 Checking live markets...", expanded=False):
             search_data = search_web(user_query) # Your existing search function
